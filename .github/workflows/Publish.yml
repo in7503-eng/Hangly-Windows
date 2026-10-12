@@ -1,0 +1,54 @@
+name: Build & Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Find & Publish App
+      shell: pwsh
+      run: |
+        # Automatically find the main .csproj file anywhere in the repo
+        $proj = Get-ChildItem -Recurse -Filter *.csproj | Where-Object { $_.Name -like "*App.csproj" -or $_.Name -like "*Hangly*.csproj" -or $_.Name -like "*Jingly*.csproj" } | Select-Object -First 1
+        if (-not $proj) {
+            $proj = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
+        }
+        
+        if (-not $proj) {
+            Write-Error "No .csproj project file found in the repository!"
+            exit 1
+        }
+
+        Write-Host "Found and building project: $($proj.FullName)"
+        dotnet publish $proj.FullName -c Release -r win-x64 -p:Platform=x64 --self-contained false -o ./publish_output
+
+    - name: Create ZIP
+      shell: pwsh
+      run: |
+        Compress-Archive -Path ./publish_output/* -DestinationPath ./Hangly.zip
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ./Hangly.zip
+        tag_name: ${{ github.ref_name || 'v1.0.1' }}
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
